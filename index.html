@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>角色竞技场 · 二选一决出最强</title>
+    <!-- 注意：这里是 vue.global.js，不是 plugin-vue！ -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <style>
@@ -37,16 +38,11 @@
         .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: #2c3e50; color: white; padding: 12px 24px; border-radius: 60px; font-weight: bold; box-shadow: 0 10px 30px black; z-index: 999; border-left: 6px solid #e67e22; }
         .footer-note { text-align: center; margin: 25px 0; opacity: 0.6; font-size: 0.8rem; }
         .loading-text { text-align: center; padding: 30px; }
-        .add-char-link { text-align: right; margin-bottom: 5px; }
-        .add-char-link a { color: #9b59b6; text-decoration: none; }
     </style>
 </head>
 <body>
     <div id="app">
         <h1>⚔️ 角色竞技场 ⚔️</h1>
-        <div class="add-char-link">
-            <a href="#" @click.prevent="showAddTip">➕ 如何添加新角色？</a>
-        </div>
 
         <div v-if="loading" class="loading-text">🏁 加载角色中...</div>
 
@@ -107,11 +103,11 @@
     </div>
 
     <script>
-        const { createApp, ref, reactive, computed, onMounted, watch } = Vue;
+        const { createApp, ref, computed, onMounted } = Vue;
 
         // ---------- ⚠️ 请替换为你的 Supabase 信息 ----------
         const SUPABASE_URL = 'https://prugtabltcixqqdemhvp.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBydWd0YWJsdGNpeHFxZGVtaHZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU5OTk4NzMsImV4cCI6MjA5MTU3NTg3M30.BiA3679fB9gYUDyH4RIUboe9dUxSxV9td_Mzrmtgb-E';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBydWd0YWJsdGNpeHFxZGVtaHZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU5OTk4NzMsImV4cCI6MjA5MTU3NTg3M30.BiA3679fB9gYUDyH4RIUboe9dUxSxV9td_Mzrmtgb-E';  // 请确保这里是以 eyJ... 开头的完整长串
         // ------------------------------------------------
 
         const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -135,21 +131,19 @@
 
         const app = createApp({
             setup() {
-                const characters = ref([]);              // 所有角色
+                const characters = ref([]);
                 const fighterA = ref(null);
                 const fighterB = ref(null);
-                const selectedFighter = ref(null);       // 'A' 或 'B'
+                const selectedFighter = ref(null);
                 const loading = ref(true);
                 const toastMsg = ref('');
                 const votingLock = ref(false);
                 const voterId = ref('');
 
-                // 排行榜（按ELO降序）
                 const rankedCharacters = computed(() => {
                     return [...characters.value].sort((a, b) => b.elo_rating - a.elo_rating);
                 });
 
-                // 获取设备指纹
                 function getVoterId() {
                     let id = localStorage.getItem('arena_voter_id');
                     if (!id) {
@@ -159,13 +153,11 @@
                     return id;
                 }
 
-                // 显示提示
                 function showToast(msg, duration = 2500) {
                     toastMsg.value = msg;
                     setTimeout(() => { toastMsg.value = ''; }, duration);
                 }
 
-                // 加载所有角色
                 async function fetchCharacters() {
                     const { data, error } = await supabase
                         .from('characters')
@@ -180,7 +172,6 @@
                     characters.value = data;
                 }
 
-                // 随机选取两个不同的角色
                 function pickTwoRandom() {
                     if (characters.value.length < 2) {
                         showToast('至少需要两个角色才能对决，快去添加吧！');
@@ -198,14 +189,12 @@
                     return true;
                 }
 
-                // 换一组对决
                 function nextPair() {
                     if (votingLock.value) return;
                     pickTwoRandom();
                 }
 
-                // 投票给选中方
-                async function voteFor(side) {
+                function voteFor(side) {
                     if (votingLock.value) return;
                     selectedFighter.value = side;
                 }
@@ -222,7 +211,6 @@
                     const winner = selectedFighter.value === 'A' ? fighterA.value : fighterB.value;
                     const loser = selectedFighter.value === 'A' ? fighterB.value : fighterA.value;
                     
-                    // 计算新ELO
                     const { newA, newB } = calculateElo(
                         fighterA.value.elo_rating,
                         fighterB.value.elo_rating,
@@ -232,18 +220,14 @@
                     const updatedRatingA = (selectedFighter.value === 'A') ? newA : newB;
                     const updatedRatingB = (selectedFighter.value === 'A') ? newB : newA;
 
-                    // 乐观更新UI
                     fighterA.value.elo_rating = updatedRatingA;
                     fighterB.value.elo_rating = updatedRatingB;
-                    // 同步更新全局角色列表
                     const idxA = characters.value.findIndex(c => c.id === fighterA.value.id);
                     const idxB = characters.value.findIndex(c => c.id === fighterB.value.id);
                     if (idxA !== -1) characters.value[idxA].elo_rating = updatedRatingA;
                     if (idxB !== -1) characters.value[idxB].elo_rating = updatedRatingB;
 
-                    // 写入数据库：插入对决记录 + 更新角色ELO
                     try {
-                        // 1. 插入对决记录
                         const { error: matchError } = await supabase
                             .from('matches')
                             .insert([{
@@ -255,7 +239,6 @@
                         
                         if (matchError) throw matchError;
 
-                        // 2. 更新角色ELO (两步更新)
                         const { error: updateAError } = await supabase
                             .from('characters')
                             .update({ elo_rating: updatedRatingA })
@@ -269,15 +252,11 @@
                         if (updateBError) throw updateBError;
 
                         showToast(`✅ 你选择了 ${winner.name}！`, 1500);
-                        
-                        // 投票成功后自动换下一组
                         pickTwoRandom();
                     } catch (err) {
                         console.error('投票失败:', err);
                         showToast('投票提交失败，请重试', 2000);
-                        // 回滚：重新拉取数据
                         await fetchCharacters();
-                        // 恢复当前展示的两个角色数据
                         if (fighterA.value) {
                             const freshA = characters.value.find(c => c.id === fighterA.value.id);
                             if (freshA) fighterA.value.elo_rating = freshA.elo_rating;
@@ -292,7 +271,6 @@
                     }
                 }
 
-                // 实时订阅：当角色ELO变化时刷新排行榜
                 function setupRealtime() {
                     supabase
                         .channel('characters-channel')
@@ -300,13 +278,11 @@
                             { event: 'UPDATE', schema: 'public', table: 'characters' }, 
                             (payload) => {
                                 console.log('角色分数更新', payload);
-                                // 更新本地 characters 列表
                                 const updated = payload.new;
                                 const index = characters.value.findIndex(c => c.id === updated.id);
                                 if (index !== -1) {
                                     characters.value[index].elo_rating = updated.elo_rating;
                                 }
-                                // 如果当前展示的角色被更新，同步显示
                                 if (fighterA.value && fighterA.value.id === updated.id) {
                                     fighterA.value.elo_rating = updated.elo_rating;
                                 }
@@ -316,10 +292,6 @@
                             }
                         )
                         .subscribe();
-                }
-
-                function showAddTip() {
-                    showToast('📝 去 Supabase → Table Editor → characters 表里添加/修改即可', 4000);
                 }
 
                 onMounted(async () => {
@@ -345,8 +317,7 @@
                     votingLock,
                     voteFor,
                     submitVote,
-                    nextPair,
-                    showAddTip
+                    nextPair
                 };
             }
         });
