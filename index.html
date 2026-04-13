@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>角色竞技场 · 二选一决出最强</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
+        body { background: #0b0c10; color: #eee; padding: 16px; min-height: 100vh; }
+        #app { max-width: 700px; margin: 0 auto; }
+        h1 { text-align: center; margin: 10px 0 20px; font-weight: 500; letter-spacing: 2px; color: #f39c12; text-shadow: 0 0 8px rgba(243,156,18,0.3); }
+        .arena { background: #1e1e2f; border-radius: 36px; padding: 24px 16px; margin-bottom: 30px; box-shadow: 0 20px 40px rgba(0,0,0,0.6); border: 1px solid #2c2c44; }
+        .vs-row { display: flex; align-items: center; justify-content: space-around; gap: 10px; }
+        .fighter { flex: 1; text-align: center; background: #252542; border-radius: 28px; padding: 20px 5px; cursor: pointer; transition: all 0.15s; border: 2px solid transparent; }
+        .fighter:hover { background: #2f2f55; transform: scale(1.02); }
+        .fighter.selected { border-color: #f39c12; box-shadow: 0 0 20px rgba(243,156,18,0.5); }
+        .avatar { width: 100%; aspect-ratio: 1/1; border-radius: 50%; background: #0f0f1a; margin: 0 auto 12px; display: flex; align-items: center; justify-content: center; font-size: 64px; border: 3px solid #3a3a5c; overflow: hidden; }
+        .avatar img { width: 100%; height: 100%; object-fit: cover; }
+        .fighter h2 { font-size: 1.6rem; margin-bottom: 10px; }
+        .elo-badge { background: #1a1a2e; display: inline-block; padding: 4px 14px; border-radius: 30px; font-weight: bold; color: #f1c40f; }
+        .vs-divider { font-size: 2rem; font-weight: bold; color: #e74c3c; text-shadow: 0 0 8px red; }
+        .action-bar { display: flex; gap: 12px; margin-top: 25px; justify-content: center; }
+        .btn { background: #2c3e50; border: none; color: white; padding: 12px 24px; border-radius: 60px; font-size: 1rem; font-weight: bold; cursor: pointer; border: 1px solid #5a6c7e; transition: all 0.2s; }
+        .btn-primary { background: #e67e22; border-color: #f39c12; }
+        .btn-primary:hover { background: #d35400; }
+        .btn-secondary { background: #34495e; }
+        .ranking-panel { background: #15151f; border-radius: 30px; padding: 18px; margin-top: 20px; border: 1px solid #2e2e4a; }
+        .rank-list { list-style: none; margin-top: 15px; }
+        .rank-item { display: flex; align-items: center; padding: 10px 5px; border-bottom: 1px solid #28283e; }
+        .rank-number { width: 40px; font-weight: bold; color: #f39c12; }
+        .rank-avatar { width: 40px; height: 40px; border-radius: 50%; background: #1e1e30; margin-right: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px; }
+        .rank-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+        .rank-name { flex: 1; font-weight: 500; }
+        .rank-score { background: #e67e22; padding: 4px 14px; border-radius: 30px; font-weight: bold; color: #000; }
+        .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: #2c3e50; color: white; padding: 12px 24px; border-radius: 60px; font-weight: bold; box-shadow: 0 10px 30px black; z-index: 999; border-left: 6px solid #e67e22; }
+        .footer-note { text-align: center; margin: 25px 0; opacity: 0.6; font-size: 0.8rem; }
+        .loading-text { text-align: center; padding: 30px; }
+        .add-char-link { text-align: right; margin-bottom: 5px; }
+        .add-char-link a { color: #9b59b6; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <h1>⚔️ 角色竞技场 ⚔️</h1>
+        <div class="add-char-link">
+            <a href="#" @click.prevent="showAddTip">➕ 如何添加新角色？</a>
+        </div>
+
+        <div v-if="loading" class="loading-text">🏁 加载角色中...</div>
+
+        <div v-else class="arena">
+            <div class="vs-row">
+                <!-- 角色 A -->
+                <div class="fighter" :class="{ selected: selectedFighter === 'A' }" @click="voteFor('A')">
+                    <div class="avatar">
+                        <img v-if="fighterA.image_url" :src="fighterA.image_url" :alt="fighterA.name">
+                        <span v-else>{{ fighterA.emoji || '❓' }}</span>
+                    </div>
+                    <h2>{{ fighterA.name }}</h2>
+                    <span class="elo-badge">{{ fighterA.elo_rating }} 分</span>
+                </div>
+
+                <div class="vs-divider">VS</div>
+
+                <!-- 角色 B -->
+                <div class="fighter" :class="{ selected: selectedFighter === 'B' }" @click="voteFor('B')">
+                    <div class="avatar">
+                        <img v-if="fighterB.image_url" :src="fighterB.image_url" :alt="fighterB.name">
+                        <span v-else>{{ fighterB.emoji || '❓' }}</span>
+                    </div>
+                    <h2>{{ fighterB.name }}</h2>
+                    <span class="elo-badge">{{ fighterB.elo_rating }} 分</span>
+                </div>
+            </div>
+
+            <div class="action-bar">
+                <button class="btn btn-secondary" @click="nextPair" :disabled="votingLock">🔄 换一组</button>
+                <button class="btn btn-primary" @click="submitVote" :disabled="!selectedFighter || votingLock">
+                    {{ votingLock ? '提交中...' : '🗳️ 投票给选中角色' }}
+                </button>
+            </div>
+        </div>
+
+        <!-- 实时排行榜 -->
+        <div class="ranking-panel">
+            <h2 style="display:flex; align-items:center; gap:8px;">🏆 实时战力榜 <span style="font-size:0.8rem; opacity:0.7;">(ELO分)</span></h2>
+            <ul class="rank-list">
+                <li v-for="(char, idx) in rankedCharacters" :key="char.id" class="rank-item">
+                    <span class="rank-number">#{{ idx + 1 }}</span>
+                    <span class="rank-avatar">
+                        <img v-if="char.image_url" :src="char.image_url" :alt="char.name">
+                        <span v-else>{{ char.emoji || '🌟' }}</span>
+                    </span>
+                    <span class="rank-name">{{ char.name }}</span>
+                    <span class="rank-score">{{ char.elo_rating }}</span>
+                </li>
+            </ul>
+        </div>
+
+        <div class="footer-note">
+            💡 点击头像选中，再点“投票” · 每台设备每次对决仅一票 · 数据实时更新
+        </div>
+
+        <div v-if="toastMsg" class="toast">{{ toastMsg }}</div>
+    </div>
+
+    <script>
+        const { createApp, ref, reactive, computed, onMounted, watch } = Vue;
+
+        // ---------- ⚠️ 请替换为你的 Supabase 信息 ----------
+        const SUPABASE_URL = 'https://prugtabltcixqqdemhvp.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_nMtS4jGNTofKspRqgNllhg_uTqry26T';
+        // ------------------------------------------------
+
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        
+        // 简单的 ELO 计算函数 (K因子=32)
+        function calculateElo(ratingA, ratingB, winnerIsA) {
+            const expectedA = 1 / (1 + Math.pow(10, (ratingB - ratingA) / 400));
+            const expectedB = 1 - expectedA;
+            const k = 32;
+            
+            let newA, newB;
+            if (winnerIsA) {
+                newA = Math.round(ratingA + k * (1 - expectedA));
+                newB = Math.round(ratingB + k * (0 - expectedB));
+            } else {
+                newA = Math.round(ratingA + k * (0 - expectedA));
+                newB = Math.round(ratingB + k * (1 - expectedB));
+            }
+            return { newA, newB };
+        }
+
+        const app = createApp({
+            setup() {
+                const characters = ref([]);              // 所有角色
+                const fighterA = ref(null);
+                const fighterB = ref(null);
+                const selectedFighter = ref(null);       // 'A' 或 'B'
+                const loading = ref(true);
+                const toastMsg = ref('');
+                const votingLock = ref(false);
+                const voterId = ref('');
+
+                // 排行榜（按ELO降序）
+                const rankedCharacters = computed(() => {
+                    return [...characters.value].sort((a, b) => b.elo_rating - a.elo_rating);
+                });
+
+                // 获取设备指纹
+                function getVoterId() {
+                    let id = localStorage.getItem('arena_voter_id');
+                    if (!id) {
+                        id = 'v_' + Date.now() + '_' + Math.random().toString(36).substr(2, 8);
+                        localStorage.setItem('arena_voter_id', id);
+                    }
+                    return id;
+                }
+
+                // 显示提示
+                function showToast(msg, duration = 2500) {
+                    toastMsg.value = msg;
+                    setTimeout(() => { toastMsg.value = ''; }, duration);
+                }
+
+                // 加载所有角色
+                async function fetchCharacters() {
+                    const { data, error } = await supabase
+                        .from('characters')
+                        .select('*')
+                        .order('elo_rating', { ascending: false });
+                    
+                    if (error) {
+                        console.error('加载角色失败:', error);
+                        showToast('加载角色失败，请刷新');
+                        return;
+                    }
+                    characters.value = data;
+                }
+
+                // 随机选取两个不同的角色
+                function pickTwoRandom() {
+                    if (characters.value.length < 2) {
+                        showToast('至少需要两个角色才能对决，快去添加吧！');
+                        return false;
+                    }
+                    const list = [...characters.value];
+                    const idx1 = Math.floor(Math.random() * list.length);
+                    let idx2 = Math.floor(Math.random() * list.length);
+                    while (idx2 === idx1) {
+                        idx2 = Math.floor(Math.random() * list.length);
+                    }
+                    fighterA.value = { ...list[idx1] };
+                    fighterB.value = { ...list[idx2] };
+                    selectedFighter.value = null;
+                    return true;
+                }
+
+                // 换一组对决
+                function nextPair() {
+                    if (votingLock.value) return;
+                    pickTwoRandom();
+                }
+
+                // 投票给选中方
+                async function voteFor(side) {
+                    if (votingLock.value) return;
+                    selectedFighter.value = side;
+                }
+
+                async function submitVote() {
+                    if (!selectedFighter.value) {
+                        showToast('请先点击头像选择一方', 1500);
+                        return;
+                    }
+                    if (!fighterA.value || !fighterB.value) return;
+                    if (votingLock.value) return;
+
+                    votingLock.value = true;
+                    const winner = selectedFighter.value === 'A' ? fighterA.value : fighterB.value;
+                    const loser = selectedFighter.value === 'A' ? fighterB.value : fighterA.value;
+                    
+                    // 计算新ELO
+                    const { newA, newB } = calculateElo(
+                        fighterA.value.elo_rating,
+                        fighterB.value.elo_rating,
+                        selectedFighter.value === 'A'
+                    );
+                    
+                    const updatedRatingA = (selectedFighter.value === 'A') ? newA : newB;
+                    const updatedRatingB = (selectedFighter.value === 'A') ? newB : newA;
+
+                    // 乐观更新UI
+                    fighterA.value.elo_rating = updatedRatingA;
+                    fighterB.value.elo_rating = updatedRatingB;
+                    // 同步更新全局角色列表
+                    const idxA = characters.value.findIndex(c => c.id === fighterA.value.id);
+                    const idxB = characters.value.findIndex(c => c.id === fighterB.value.id);
+                    if (idxA !== -1) characters.value[idxA].elo_rating = updatedRatingA;
+                    if (idxB !== -1) characters.value[idxB].elo_rating = updatedRatingB;
+
+                    // 写入数据库：插入对决记录 + 更新角色ELO
+                    try {
+                        // 1. 插入对决记录
+                        const { error: matchError } = await supabase
+                            .from('matches')
+                            .insert([{
+                                character_a: fighterA.value.id,
+                                character_b: fighterB.value.id,
+                                winner_id: winner.id,
+                                voter_id: voterId.value
+                            }]);
+                        
+                        if (matchError) throw matchError;
+
+                        // 2. 更新角色ELO (两步更新)
+                        const { error: updateAError } = await supabase
+                            .from('characters')
+                            .update({ elo_rating: updatedRatingA })
+                            .eq('id', fighterA.value.id);
+                        if (updateAError) throw updateAError;
+
+                        const { error: updateBError } = await supabase
+                            .from('characters')
+                            .update({ elo_rating: updatedRatingB })
+                            .eq('id', fighterB.value.id);
+                        if (updateBError) throw updateBError;
+
+                        showToast(`✅ 你选择了 ${winner.name}！`, 1500);
+                        
+                        // 投票成功后自动换下一组
+                        pickTwoRandom();
+                    } catch (err) {
+                        console.error('投票失败:', err);
+                        showToast('投票提交失败，请重试', 2000);
+                        // 回滚：重新拉取数据
+                        await fetchCharacters();
+                        // 恢复当前展示的两个角色数据
+                        if (fighterA.value) {
+                            const freshA = characters.value.find(c => c.id === fighterA.value.id);
+                            if (freshA) fighterA.value.elo_rating = freshA.elo_rating;
+                        }
+                        if (fighterB.value) {
+                            const freshB = characters.value.find(c => c.id === fighterB.value.id);
+                            if (freshB) fighterB.value.elo_rating = freshB.elo_rating;
+                        }
+                    } finally {
+                        votingLock.value = false;
+                        selectedFighter.value = null;
+                    }
+                }
+
+                // 实时订阅：当角色ELO变化时刷新排行榜
+                function setupRealtime() {
+                    supabase
+                        .channel('characters-channel')
+                        .on('postgres_changes', 
+                            { event: 'UPDATE', schema: 'public', table: 'characters' }, 
+                            (payload) => {
+                                console.log('角色分数更新', payload);
+                                // 更新本地 characters 列表
+                                const updated = payload.new;
+                                const index = characters.value.findIndex(c => c.id === updated.id);
+                                if (index !== -1) {
+                                    characters.value[index].elo_rating = updated.elo_rating;
+                                }
+                                // 如果当前展示的角色被更新，同步显示
+                                if (fighterA.value && fighterA.value.id === updated.id) {
+                                    fighterA.value.elo_rating = updated.elo_rating;
+                                }
+                                if (fighterB.value && fighterB.value.id === updated.id) {
+                                    fighterB.value.elo_rating = updated.elo_rating;
+                                }
+                            }
+                        )
+                        .subscribe();
+                }
+
+                function showAddTip() {
+                    showToast('📝 去 Supabase → Table Editor → characters 表里添加/修改即可', 4000);
+                }
+
+                onMounted(async () => {
+                    voterId.value = getVoterId();
+                    await fetchCharacters();
+                    if (characters.value.length >= 2) {
+                        pickTwoRandom();
+                    } else {
+                        showToast('⚠️ 角色不足，请先在数据库添加至少两个角色', 4000);
+                    }
+                    setupRealtime();
+                    loading.value = false;
+                });
+
+                return {
+                    characters,
+                    fighterA,
+                    fighterB,
+                    selectedFighter,
+                    rankedCharacters,
+                    loading,
+                    toastMsg,
+                    votingLock,
+                    voteFor,
+                    submitVote,
+                    nextPair,
+                    showAddTip
+                };
+            }
+        });
+
+        app.mount('#app');
+    </script>
+</body>
+</html>
